@@ -4,7 +4,7 @@
 // Version     : v2.0 
 // Summary     : Accept multi-client, Main:Blocking mode, Thread:Select(hang-up)
 // Description : Basic TCP server
-// Update	   : First version
+// Update	   : Add thread to achieve multi-communication. Comment added.
 //============================================================================
 
 #include<stdio.h>
@@ -53,7 +53,7 @@ void *tcp_Comm(void *arg){
 		/*Set Select
 		 * Component initialization
 		 * set trigger to each accepted client socket (trigger_Number+1,write:NULL,Error:Null,read:Yes)
-		 * set trigger_Number(not amount of client, but the largest client slot number)
+		 * set trigger_Number (Warning: not amount of client, but the largest client slot number)
 		 * set block time*/
 		FD_ZERO(&recv_fd);
 		int max_nfds=0;
