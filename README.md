@@ -1,4 +1,4 @@
-# **[^TCP_Server_Sample-Linux-C-]**
+# **TCP_Server_Sample-Linux-C-[^1]**
     Just a small TCP_Server sample for myself and other starters. 
 ---
 ## **Index**
@@ -7,7 +7,7 @@
       * Struck on initialize ***structur in (struture \*)***
     * Add queue
     * UDP Server
-* [^`Latest version`]<br>
+* `Latest version`[^2]<br>
     * Function & Structure
       >* Socket
       >* Bind
@@ -87,5 +87,5 @@
 
 
 
-[^TCP_Server_Sample-Linux-C-]:Running_In_Ubuntu_Eclipse
-[^`Latest version`]:v2.0_Threads
+[^1]:Running_In_Ubuntu_Eclipse
+[^2]:v2.0_Threads
