@@ -13,13 +13,13 @@
       >* Bind
       >* Listen
       >* Threads{
-        >>* Loop{
-          >>>* Client check
-          >>>* Select{
-            >>>>* Recv
-            >>>>* Display
+      >>* Loop{
+      >>>* Client check
+      >>>* Select{
+      >>>>* Recv
+      >>>>* Display
       >* Loop{
-        >>* Accept
+      >>* Accept
     * Behavior
       * Send&Recv client message
       * Main: blocking mode, block at *accept*
@@ -46,9 +46,9 @@
       >* Bind
       >* Listen
       >* Loop{
-        >>* Accept
-        >>* Recv
-        >>* Display
+      >>* Accept
+      >>* Recv
+      >>* Display
     * Behavior
       * Basic TCP_Server function
       * Blocking mode: block at *accept*
@@ -60,13 +60,13 @@
       >* Bind
       >* Listen
       >* Threads{
-        >>* Loop{
-          >>>* Client check
-          >>>* Select{
-            >>>>* Recv
-            >>>>* Display
+      >>* Loop{
+      >>>* Client check
+      >>>* Select{
+      >>>>* Recv
+      >>>>* Display
       >* Loop{
-        >>* Accept
+      >>* Accept
     * Behavior
       * Send&Recv client message
       * Main: blocking mode, block at *accept*
