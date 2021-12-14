@@ -1,10 +1,9 @@
 //============================================================================
-// Name        : TCP_Server
-// Author      : NEIL-WJ
-// Version     : v2.0 
-// Summary     : Accept multi-client, Main:Blocking mode, Thread:Select(hang-up)
-// Description : Basic TCP server
-// Update	   : First version
+// Name        : for_Test.cpp
+// Author      : NEIL_WJ
+// Version     : v1.1 'get_IP'
+// Copyright   :
+// Description : TCP_server/Thread/
 //============================================================================
 
 #include<stdio.h>
@@ -16,6 +15,9 @@
 #include<netinet/in.h>
 #include<unistd.h>
 #include<pthread.h>
+#include<arpa/inet.h>
+#include<sys/ioctl.h>
+#include<net/if.h>
 
 #define recv_Len 1024
 #define listen_Buff 5
@@ -24,10 +26,14 @@
 struct client_Slots{
 	int avai_Check;
 	int client_Data[conn_Limit];
+
 };
 
 void *tcp_Comm(void *arg){
 	pthread_detach(pthread_self());
+
+	struct sockaddr_in client_Addr;
+	socklen_t client_Addr_len;
 
 	client_Slots *client_Sock = (client_Slots*)arg;
 	char test_Buff[recv_Len];
@@ -53,7 +59,7 @@ void *tcp_Comm(void *arg){
 		/*Set Select
 		 * Component initialization
 		 * set trigger to each accepted client socket (trigger_Number+1,write:NULL,Error:Null,read:Yes)
-		 * set trigger_Number(not amount of client, but the largest client slot number)
+		 * set trigger_Number(Warning: not amount of client, but the largest client slot number)
 		 * set block time*/
 		FD_ZERO(&recv_fd);
 		int max_nfds=0;
@@ -80,7 +86,12 @@ void *tcp_Comm(void *arg){
 				 * Message_length = (target_client_socket, (char)message, Maximum_message_length, Optional_setup)*/
 				if((n = recv(client_Sock->client_Data[No], test_Buff, recv_Len, 0))>0){
 					test_Buff[n] = '\0';
-					printf("Client[%d] Message: %s\n",(No+1) , test_Buff);
+					printf("Client[%d] Message: %s	",(No+1) , test_Buff);
+
+					/*Get and display Client_IP:Port*/
+					client_Addr_len = sizeof(client_Addr);
+					getpeername(client_Sock->client_Data[No],(struct sockaddr*)&client_Addr, &client_Addr_len);
+					printf("[%s:%d]\n",inet_ntoa(client_Addr.sin_addr),ntohs(client_Addr.sin_port));
 
 					if (strcmp(test_Buff, end_Message) == 0){
 						close(client_Sock->client_Data[No]);
@@ -108,9 +119,17 @@ int main(int argc, char** argv) {
 
 	int test_Sock, thread_Check;
 	struct sockaddr_in servaddr;
-	char start_Message[15] = "Connected!";
+	char start_Message[15] = "Greeting!\n";
+
+	struct sockaddr_in client_Addr;
+	socklen_t  client_Addr_len;
 
 	pthread_t threads;
+
+
+	/* initialization variable in structure client_Slot*/
+	client_Slots *client_Slot =  (client_Slots *)alloca(sizeof(client_Slots));
+	client_Slot->avai_Check = 0;
 
 
 	/*Set server Socket (IPv4, TCP, TCP protocol)*/
@@ -123,12 +142,35 @@ int main(int argc, char** argv) {
 		printf("Socket created!\n");
 	}
 
+	/*Checkout if_config and select a non-callback IP_address*/
+	struct ifconf if_conf;
+	struct ifreq *if_requ;
+	char buf[1024];
+	char server_addr[15];
+	char server_name[15];
+	unsigned long int if_leng = 3;
+	if_conf.ifc_len = 1024;
+	if_conf.ifc_buf = buf;
+
+	ioctl(test_Sock, SIOCGIFCONF, &if_conf);
+	if_requ = (struct ifreq*)buf;
+	for(size_t i = 0;i < (if_conf.ifc_len/sizeof(struct ifreq)); i++)
+	{
+		strcpy(server_addr, inet_ntoa(((struct sockaddr_in *)&(if_requ->ifr_addr))->sin_addr));
+		if(memcmp(server_addr,"127",if_leng) != 0){
+			strcpy(server_name, if_requ->ifr_name);
+			break;
+		}
+		if_requ++;
+	}
+
+
 	/*Set Bind
 	 * initialization (=0)
 	 * setup(IPv4, Server_address=Local_address, Port)*/
 	memset(&servaddr, 0, sizeof(servaddr));
 	servaddr.sin_family = AF_INET;
-	servaddr.sin_addr.s_addr = INADDR_ANY;
+	servaddr.sin_addr.s_addr = inet_addr(server_addr);//htonl(INADDR_ANY);
 	servaddr.sin_port = htons(8888);
 	if (bind(test_Sock, (struct sockaddr*)&servaddr, sizeof(servaddr)) == -1){
 		printf("Error in bind\n");
@@ -146,16 +188,16 @@ int main(int argc, char** argv) {
 		printf("Listen started!\n");
 	}
 
+
 	printf("Waiting for client...\n");
+	printf("Server_address: [%s]%s\n",server_name, server_addr);
 
 	/*Set structure (for_thread)
-	 * Assign memory space for structure
-	 * initialization variable in structure*/
-	client_Slots *client_Slot = (client_Slots *)alloca(sizeof(client_Slots));
-	client_Slot->avai_Check = 0;
+	 * Assign memory space for structure*/
 	for(int i=0;i<conn_Limit;i++){
 		client_Slot->client_Data[i] = -1;
 	}
+
 
 	/*Set thread
 	 * (Thread_id, Optional_setup, Sub_function, (void *)Parameter)*/
@@ -165,8 +207,8 @@ int main(int argc, char** argv) {
 		return 0;
 	}
 
-	while(1){
 
+	while(1){
 		if(client_Slot->client_Data[0] == -2){
 			printf("-2");
 			break;
@@ -183,11 +225,19 @@ int main(int argc, char** argv) {
 			continue;
 		}
 
+
 		/*Set accept4
 		 * Client_id = (Server_Socket, Optional_setup, Length_limit, Special_flag=Non_block)*/
 		if((client_Slot->client_Data[client_No] = accept4(test_Sock, (struct sockaddr*)NULL, NULL, SOCK_NONBLOCK)) != -1){
 			client_Slot->avai_Check ++;
-			printf("Device connected. Name: client[%d]\n",client_No+1);
+
+			printf("Device connected. Name: client[%d]. ",client_No+1);
+
+			/*Get and display Client_IP:Port*/
+			client_Addr_len = sizeof(client_Addr);
+			getpeername(client_Slot->client_Data[client_No],(struct sockaddr*)&client_Addr, &client_Addr_len);
+			printf("[%s:%d]\n",inet_ntoa(client_Addr.sin_addr),ntohs(client_Addr.sin_port));
+
 			if (client_No == 4){
 				printf("Reach maximum connection number!\n");
 			}
@@ -204,3 +254,6 @@ int main(int argc, char** argv) {
 	close(test_Sock);
 	return 0;
 }
+
+
+
