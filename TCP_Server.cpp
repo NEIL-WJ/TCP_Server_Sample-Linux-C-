@@ -22,6 +22,7 @@
 #define recv_Len 1024
 #define listen_Buff 5
 #define conn_Limit 5
+#define server_Port 8888
 
 struct client_Slots{
 	int avai_Check;
@@ -43,7 +44,7 @@ void *tcp_Comm(void *arg){
 	struct timeval recv_Time;
 	fd_set recv_fd;
 
-	printf("<tcp_Comm> start!\n");
+	printf("---<TCP_Comm started!>---\n");
 
 	while(1){
 
@@ -59,7 +60,7 @@ void *tcp_Comm(void *arg){
 		/*Set Select
 		 * Component initialization
 		 * set trigger to each accepted client socket (trigger_Number+1,write:NULL,Error:Null,read:Yes)
-		 * set trigger_Number(Warning: not amount of client, but the largest client slot number)
+		 * set trigger_Number(not amount of client, but the largest client slot number)
 		 * set block time*/
 		FD_ZERO(&recv_fd);
 		int max_nfds=0;
@@ -72,7 +73,7 @@ void *tcp_Comm(void *arg){
 		recv_Time.tv_sec = 2;
 		recv_Time.tv_usec = 0;
 		if((act_Slot = select(max_nfds+1,&recv_fd,NULL,NULL,&recv_Time))<0){
-			printf("Select error\n");
+			printf("[TCP]Select error\n");
 			continue;
 		}
 
@@ -86,7 +87,7 @@ void *tcp_Comm(void *arg){
 				 * Message_length = (target_client_socket, (char)message, Maximum_message_length, Optional_setup)*/
 				if((n = recv(client_Sock->client_Data[No], test_Buff, recv_Len, 0))>0){
 					test_Buff[n] = '\0';
-					printf("Client[%d] Message: %s	",(No+1) , test_Buff);
+					printf("[TCP]Client[%d] Message: %s	",(No+1) , test_Buff);
 
 					/*Get and display Client_IP:Port*/
 					client_Addr_len = sizeof(client_Addr);
@@ -97,8 +98,8 @@ void *tcp_Comm(void *arg){
 						close(client_Sock->client_Data[No]);
 						client_Sock->client_Data[No] = -1;
 						client_Sock->avai_Check --;
-						printf("client[%d] disconnected!\n",(No+1));
-						printf("Remain client:%d\n",client_Sock->avai_Check);
+						printf("[TCP]client[%d] disconnected!\n",(No+1));
+						printf("[TCP]Remain client:%d\n",client_Sock->avai_Check);
 					}
 				}
 				else if(n==0){
@@ -106,7 +107,7 @@ void *tcp_Comm(void *arg){
 					close(client_Sock->client_Data[No]);
 					client_Sock->client_Data[No] = -1;
 					client_Sock->avai_Check --;
-					printf("Remain client:%d\n",client_Sock->avai_Check);
+					printf("[TCP]Remain client:%d\n",client_Sock->avai_Check);
 				}
 			}
 		}
@@ -114,10 +115,9 @@ void *tcp_Comm(void *arg){
 }
 
 
-
-int main(int argc, char** argv) {
-
-	int test_Sock, thread_Check;
+/*TCP_Setup-------------------------*/
+void *tcp_Setup(void *arg){
+	int tcp_Sock, thread_Check;
 	struct sockaddr_in servaddr;
 	char start_Message[15] = "Greeting!\n";
 
@@ -126,20 +126,17 @@ int main(int argc, char** argv) {
 
 	pthread_t threads;
 
-
-	/* initialization variable in structure client_Slot*/
-	client_Slots *client_Slot =  (client_Slots *)alloca(sizeof(client_Slots));
-	client_Slot->avai_Check = 0;
+	printf("---<TCP_Setup started!>---\n");
 
 
 	/*Set server Socket (IPv4, TCP, TCP protocol)*/
-	test_Sock = socket(AF_INET, SOCK_STREAM, 0);
-	if(test_Sock == -1){
-		printf("Error in creating socket!\n");
+	tcp_Sock = socket(AF_INET, SOCK_STREAM, 0);
+	if(tcp_Sock == -1){
+		printf("[TCP]Error in creating socket!\n");
 		return 0;
 	}
 	else{
-		printf("Socket created!\n");
+		printf("[TCP]Socket created!\n");
 	}
 
 	/*Checkout if_config and select a non-callback IP_address*/
@@ -152,7 +149,7 @@ int main(int argc, char** argv) {
 	if_conf.ifc_len = 1024;
 	if_conf.ifc_buf = buf;
 
-	ioctl(test_Sock, SIOCGIFCONF, &if_conf);
+	ioctl(tcp_Sock, SIOCGIFCONF, &if_conf);
 	if_requ = (struct ifreq*)buf;
 	for(size_t i = 0;i < (if_conf.ifc_len/sizeof(struct ifreq)); i++)
 	{
@@ -164,49 +161,50 @@ int main(int argc, char** argv) {
 		if_requ++;
 	}
 
-
 	/*Set Bind
 	 * initialization (=0)
 	 * setup(IPv4, Server_address=Local_address, Port)*/
 	memset(&servaddr, 0, sizeof(servaddr));
 	servaddr.sin_family = AF_INET;
-	servaddr.sin_addr.s_addr = inet_addr(server_addr);//htonl(INADDR_ANY);
-	servaddr.sin_port = htons(8888);
-	if (bind(test_Sock, (struct sockaddr*)&servaddr, sizeof(servaddr)) == -1){
-		printf("Error in bind\n");
+	servaddr.sin_addr.s_addr = inet_addr(server_addr);
+	servaddr.sin_port = htons(server_Port);
+	if (bind(tcp_Sock, (struct sockaddr*)&servaddr, sizeof(servaddr)) == -1){
+		printf("[TCP]Error in bind\n");
 		return 0;
 	}
 	else{
-		printf("Bind created!\n");
+		printf("[TCP]Bind created!\n");
 	}
-
-	if (listen(test_Sock, listen_Buff) == -1){
-		printf("Error in listen!");
-		return 0;
-	}
-	else{
-		printf("Listen started!\n");
-	}
-
-
-	printf("Waiting for client...\n");
-	printf("Server_address: [%s]%s\n",server_name, server_addr);
+	printf("[TCP]Server_address: [%s]%s:%d\n",server_name, server_addr, server_Port);
 
 	/*Set structure (for_thread)
-	 * Assign memory space for structure*/
+	 * Assign memory space for structure*
+	 * initialization variable in structure client_Slot*/
+
+	client_Slots *client_Slot =  (client_Slots *)alloca(sizeof(client_Slots));
+	client_Slot->avai_Check = 0;
 	for(int i=0;i<conn_Limit;i++){
 		client_Slot->client_Data[i] = -1;
 	}
-
 
 	/*Set thread
 	 * (Thread_id, Optional_setup, Sub_function, (void *)Parameter)*/
 	thread_Check = pthread_create(&threads,NULL,tcp_Comm,(void *)client_Slot);
 	if (thread_Check != 0){
-		printf("Error in thread create!");
+		printf("[TCP]Error in thread create!");
 		return 0;
 	}
 
+	if (listen(tcp_Sock, listen_Buff) == -1){
+		printf("[TCP]Error in listen!");
+		return 0;
+	}
+	else{
+		printf("[TCP]Listen started!\n");
+	}
+
+
+	printf("<TCP_Setup finished!> Waiting for client...\n");
 
 	while(1){
 		if(client_Slot->client_Data[0] == -2){
@@ -228,10 +226,10 @@ int main(int argc, char** argv) {
 
 		/*Set accept4
 		 * Client_id = (Server_Socket, Optional_setup, Length_limit, Special_flag=Non_block)*/
-		if((client_Slot->client_Data[client_No] = accept4(test_Sock, (struct sockaddr*)NULL, NULL, SOCK_NONBLOCK)) != -1){
+		if((client_Slot->client_Data[client_No] = accept4(tcp_Sock, (struct sockaddr*)NULL, NULL, SOCK_NONBLOCK)) != -1){
 			client_Slot->avai_Check ++;
 
-			printf("Device connected. Name: client[%d]. ",client_No+1);
+			printf("[TCP]Device connected. Name: client[%d]. ",client_No+1);
 
 			/*Get and display Client_IP:Port*/
 			client_Addr_len = sizeof(client_Addr);
@@ -239,19 +237,134 @@ int main(int argc, char** argv) {
 			printf("[%s:%d]\n",inet_ntoa(client_Addr.sin_addr),ntohs(client_Addr.sin_port));
 
 			if (client_No == 4){
-				printf("Reach maximum connection number!\n");
+				printf("[TCP]Reach maximum connection number!\n");
 			}
 
 			if (send(client_Slot->client_Data[client_No],start_Message,15,0)==-1){
-				printf("Error in send message\n");
+				printf("[TCP]Error in send message\n");
 				return 0;
 			}
 			continue;
 		}
-		printf("Error in accept!");
+		printf("[TCP]Error in accept!");
 	}
 	close(client_Slot->client_Data[0]);
-	close(test_Sock);
+	close(tcp_Sock);
+	return 0;
+}
+
+
+void *udp_Comm(void *arg){
+
+	struct sockaddr_in client_Addr;
+	socklen_t client_Addr_len;
+
+	char test_Buff[recv_Len];
+
+	int n;
+
+	int client_Sock = (*(int*)arg);
+
+	client_Addr_len = sizeof(client_Addr);
+	memset(test_Buff,0,sizeof(test_Buff));
+
+	printf("---<UDP_Comm started!>---\n");
+
+	while(1){
+		if((n=recvfrom(client_Sock,test_Buff,recv_Len,0,(struct sockaddr *)&client_Addr,&client_Addr_len)) == -1){
+			printf("Error in UDP_recvform!\n");
+		}
+		else{
+			test_Buff[n] = '\0';
+			printf("[UDP]Message: %s	[%s:%d]\n",test_Buff,inet_ntoa(client_Addr.sin_addr),ntohs(client_Addr.sin_port));
+		}
+	}
+
+
+	return 0;
+}
+
+
+/*UDP_Setup-------------------------*/
+int udp_Setup(){
+	int udp_Sock, thread_Check;
+	struct sockaddr_in servaddr;
+
+	pthread_t threads;
+
+	printf("---<UDP_Setup started!>---\n");
+
+	/*Set server Socket (IPv4, TCP, TCP protocol)*/
+	udp_Sock = socket(PF_INET, SOCK_DGRAM, 0);
+	if(udp_Sock == -1){
+		printf("[UDP]Error in creating socket!\n");
+		return 0;
+	}
+	else{
+		printf("[UDP]Socket created!\n");
+	}
+
+	/*Checkout if_config and select a non-callback IP_address*/
+	struct ifconf if_conf;
+	struct ifreq *if_requ;
+	char buf[1024];
+	char server_addr[15];
+	char server_name[15];
+	unsigned long int if_leng = 3;
+	if_conf.ifc_len = 1024;
+	if_conf.ifc_buf = buf;
+
+	ioctl(udp_Sock, SIOCGIFCONF, &if_conf);
+	if_requ = (struct ifreq*)buf;
+	for(size_t i = 0;i < (if_conf.ifc_len/sizeof(struct ifreq)); i++)
+	{
+		strcpy(server_addr, inet_ntoa(((struct sockaddr_in *)&(if_requ->ifr_addr))->sin_addr));
+		if(memcmp(server_addr,"127",if_leng) != 0){
+			strcpy(server_name, if_requ->ifr_name);
+			break;
+		}
+		if_requ++;
+	}
+	printf("[UDP]Server_address: [%s]%s:%d\n",server_name, server_addr, server_Port);
+
+	/*Set Bind
+	 * initialization (=0)
+	 * setup(IPv4, Server_address=Local_address, Port)*/
+	memset(&servaddr, 0, sizeof(servaddr));
+	servaddr.sin_family = AF_INET;
+	servaddr.sin_addr.s_addr = inet_addr(server_addr);
+	servaddr.sin_port = htons(server_Port);
+	if (bind(udp_Sock, (struct sockaddr*)&servaddr, sizeof(servaddr)) == -1){
+		printf("[UDP]Error in bind\n");
+		return 0;
+	}
+	else{
+		printf("[UDP]Bind created!\n");
+	}
+
+	/*Set thread
+	 * (Thread_id, Optional_setup, Sub_function, (void *)Parameter)*/
+	thread_Check = pthread_create(&threads,NULL,udp_Comm,(void *)&udp_Sock);
+	if (thread_Check != 0){
+		printf("[UDP]Error in thread create!");
+		return 0;
+	}
+	printf("---<UDP_Setup finished!>---\n");
+	pthread_join(threads,NULL);
+	return 0;
+}
+
+
+int main(int argc, char** argv) {
+	pthread_t tcp_thread;
+	int thread_Check;
+
+	thread_Check = pthread_create(&tcp_thread,NULL,tcp_Setup,NULL);
+	if (thread_Check != 0){
+		printf("[UDP]Error in thread create!");
+		return 0;
+	}
+	udp_Setup();
 	return 0;
 }
 
