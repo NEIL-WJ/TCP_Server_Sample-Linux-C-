@@ -18,31 +18,46 @@
 #include<arpa/inet.h>
 #include<sys/ioctl.h>
 #include<net/if.h>
+#include<sys/queue.h>
 
 #define recv_Len 1024
 #define listen_Buff 5
 #define conn_Limit 5
 #define server_Port 8888
 
-struct client_Slots{
+/*Transmit client_socket from main to thread*/
+typedef struct client_Slots{
 	int avai_Check;
 	int client_Data[conn_Limit];
+}client_Slots;
 
-};
+/*Message queue*/
+typedef struct client_Mess{
+	CIRCLEQ_ENTRY(client_Mess) field;
+	char *message;
+	int client_ID;
+}client_Mess;
+typedef CIRCLEQ_HEAD(mess_head,client_Mess) mess_head;
 
+/*TCP_Communication-----------------*/
 void *tcp_Comm(void *arg){
-	pthread_detach(pthread_self());
 
 	struct sockaddr_in client_Addr;
 	socklen_t client_Addr_len;
 
-	client_Slots *client_Sock = (client_Slots*)arg;
+	struct client_Slots *client_Sock = (client_Slots*)arg;
 	char test_Buff[recv_Len];
 	int n, act_Slot;
 	char end_Message[] = "bye";
 
 	struct timeval recv_Time;
 	fd_set recv_fd;
+
+	/*queue_slist initialization---*/
+	mess_head *m_head = malloc(sizeof(mess_head));
+	CIRCLEQ_INIT(m_head);
+	client_Mess *mess_Buff;
+
 
 	printf("---<TCP_Comm started!>---\n");
 
@@ -85,7 +100,7 @@ void *tcp_Comm(void *arg){
 
 				/*set receive
 				 * Message_length = (target_client_socket, (char)message, Maximum_message_length, Optional_setup)*/
-				if((n = recv(client_Sock->client_Data[No], test_Buff, recv_Len, 0))>0){
+				if((n = recv(client_Sock->client_Data[No], test_Buff, recv_Len, MSG_DONTWAIT))>0){
 					test_Buff[n] = '\0';
 					printf("[TCP]Client[%d] Message: %s	",(No+1) , test_Buff);
 
@@ -101,19 +116,51 @@ void *tcp_Comm(void *arg){
 						printf("[TCP]client[%d] disconnected!\n",(No+1));
 						printf("[TCP]Remain client:%d\n",client_Sock->avai_Check);
 					}
+					else{
+						mess_Buff = malloc(sizeof(client_Mess));
+						mess_Buff->message = malloc(sizeof(test_Buff));
+						strcpy(mess_Buff->message,test_Buff);
+						mess_Buff->client_ID = No;
+						CIRCLEQ_INSERT_HEAD(m_head, mess_Buff, field);
+					}
 				}
-				else if(n==0){
-					printf("Disconnected by client[%d]\n",(No+1));
+				else if(n==0){											/*(0 = recv_) means received a client disconnect message*/
+					printf("[TCP]Disconnected by client[%d]\n",(No+1));
 					close(client_Sock->client_Data[No]);
 					client_Sock->client_Data[No] = -1;
 					client_Sock->avai_Check --;
 					printf("[TCP]Remain client:%d\n",client_Sock->avai_Check);
 				}
+				else{
+					/*if one of the connected clients have no messages sent*/
+				}
 			}
+		}
+		else{
+			/*if no client connected*/
+			if(CIRCLEQ_FIRST(m_head)==CIRCLEQ_LAST(m_head)){
+				continue;
+			}
+			while(1){
+				if(CIRCLEQ_FIRST(m_head)==CIRCLEQ_LAST(m_head)){
+					break;
+				}
+				char mess_Output[sizeof(CIRCLEQ_LAST(m_head)->message)];
+				strcpy(mess_Output,CIRCLEQ_LAST(m_head)->message);
+				printf("| (ID:%d)%s ",CIRCLEQ_LAST(m_head)->client_ID,mess_Output);
+				mess_Buff = CIRCLEQ_LAST(m_head);
+				CIRCLEQ_REMOVE(m_head,mess_Buff,field);
+			}
+			char mess_Output[sizeof(CIRCLEQ_LAST(m_head)->message)];	/*Repeat one more time to output the last message*/
+			strcpy(mess_Output,CIRCLEQ_LAST(m_head)->message);
+			printf("| (ID:%d)%s |\n",CIRCLEQ_LAST(m_head)->client_ID,mess_Output);
+			mess_Buff = CIRCLEQ_LAST(m_head);
+			CIRCLEQ_REMOVE(m_head,mess_Buff,field);
+
+			printf("[TCP]Queue_Output --Done--\n");
 		}
 	}
 }
-
 
 /*TCP_Setup-------------------------*/
 void *tcp_Setup(void *arg){
@@ -191,7 +238,7 @@ void *tcp_Setup(void *arg){
 	 * (Thread_id, Optional_setup, Sub_function, (void *)Parameter)*/
 	thread_Check = pthread_create(&threads,NULL,tcp_Comm,(void *)client_Slot);
 	if (thread_Check != 0){
-		printf("[TCP]Error in thread create!");
+		printf("[TCP]Error in comm_thread create!");
 		return 0;
 	}
 
@@ -226,7 +273,7 @@ void *tcp_Setup(void *arg){
 
 		/*Set accept4
 		 * Client_id = (Server_Socket, Optional_setup, Length_limit, Special_flag=Non_block)*/
-		if((client_Slot->client_Data[client_No] = accept4(tcp_Sock, (struct sockaddr*)NULL, NULL, SOCK_NONBLOCK)) != -1){
+		if((client_Slot->client_Data[client_No] = accept(tcp_Sock, (struct sockaddr*)NULL, NULL)) != -1){
 			client_Slot->avai_Check ++;
 
 			printf("[TCP]Device connected. Name: client[%d]. ",client_No+1);
@@ -248,12 +295,13 @@ void *tcp_Setup(void *arg){
 		}
 		printf("[TCP]Error in accept!");
 	}
+	pthread_join(threads,NULL);
 	close(client_Slot->client_Data[0]);
 	close(tcp_Sock);
 	return 0;
 }
 
-
+/*UDP_Communication-----------------*/
 void *udp_Comm(void *arg){
 
 	struct sockaddr_in client_Addr;
@@ -283,7 +331,6 @@ void *udp_Comm(void *arg){
 
 	return 0;
 }
-
 
 /*UDP_Setup-------------------------*/
 int udp_Setup(){
@@ -361,10 +408,11 @@ int main(int argc, char** argv) {
 
 	thread_Check = pthread_create(&tcp_thread,NULL,tcp_Setup,NULL);
 	if (thread_Check != 0){
-		printf("[UDP]Error in thread create!");
+		printf("[TCP]Error in setup_thread create!");
 		return 0;
 	}
 	udp_Setup();
+	pthread_join(tcp_thread,NULL);
 	return 0;
 }
 
