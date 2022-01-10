@@ -6,19 +6,20 @@
 // Description : TCP_server/Thread/
 //============================================================================
 
-#include<stdio.h>
-#include<stdlib.h>
-#include<string.h>
-#include<errno.h>
-#include<sys/types.h>
-#include<sys/socket.h>
-#include<netinet/in.h>
-#include<unistd.h>
-#include<pthread.h>
-#include<arpa/inet.h>
-#include<sys/ioctl.h>
-#include<net/if.h>
-#include<sys/queue.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <errno.h>
+#include <sys/types.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <unistd.h>
+#include <pthread.h>
+#include <arpa/inet.h>
+#include <sys/ioctl.h>
+#include <net/if.h>
+#include <sys/queue.h>
+
 
 #define recv_Len 1024
 #define listen_Buff 5
@@ -38,6 +39,14 @@ typedef struct client_Mess{
 	int client_ID;
 }client_Mess;
 typedef CIRCLEQ_HEAD(mess_head,client_Mess) mess_head;
+
+typedef struct mqtt_Setups{
+	char broker_Addr[15];
+	int broker_Port;
+	char user_Name[24];
+	char user_Pass[24];
+}mqtt_Setups;
+
 
 /*TCP_Communication-----------------*/
 void *tcp_Comm(void *arg){
@@ -59,7 +68,7 @@ void *tcp_Comm(void *arg){
 	client_Mess *mess_Buff;
 
 
-	printf("---<TCP_Comm started!>---\n");
+	printf("\n---<TCP_Comm started!>---\n");
 
 	while(1){
 
@@ -173,7 +182,7 @@ void *tcp_Setup(void *arg){
 
 	pthread_t threads;
 
-	printf("---<TCP_Setup started!>---\n");
+	printf("\n---<TCP_Setup started!>---\n");
 
 
 	/*Set server Socket (IPv4, TCP, TCP protocol)*/
@@ -316,7 +325,7 @@ void *udp_Comm(void *arg){
 	client_Addr_len = sizeof(client_Addr);
 	memset(test_Buff,0,sizeof(test_Buff));
 
-	printf("---<UDP_Comm started!>---\n");
+	printf("\n---<UDP_Comm started!>---\n");
 
 	while(1){
 		if((n=recvfrom(client_Sock,test_Buff,recv_Len,0,(struct sockaddr *)&client_Addr,&client_Addr_len)) == -1){
@@ -339,7 +348,7 @@ int udp_Setup(){
 
 	pthread_t threads;
 
-	printf("---<UDP_Setup started!>---\n");
+	printf("\n---<UDP_Setup started!>---\n");
 
 	/*Set server Socket (IPv4, TCP, TCP protocol)*/
 	udp_Sock = socket(PF_INET, SOCK_DGRAM, 0);
@@ -401,18 +410,119 @@ int udp_Setup(){
 	return 0;
 }
 
+/*TCP_Client------------------------*/
+void *tcp_Client(void *arg){
+
+	mqtt_Setups *mqtt_Setup = (mqtt_Setups *)arg;
+
+	int client_Socket, n;
+	char start_Message[15] = "Greeting!\n";
+	char client_Buff[recv_Len];
+
+	sleep(1);
+
+	printf("\n---<TCPClient_Setup started!>---\n");
+
+	if ((client_Socket = socket(AF_INET,SOCK_STREAM,0))<0){
+		printf("<TCP_Client>Error in Socket\n");
+	}
+	else{
+		printf("[TCP_Client]Socket created!\n");
+	}
+
+	char c_Addr[15];
+	int c_Port;
+
+	printf("Setup_Info %s %d\n%s %s\n",((mqtt_Setups*)arg)->broker_Addr,mqtt_Setup->broker_Port,mqtt_Setup->user_Name,mqtt_Setup->user_Pass);
+
+	strcpy(c_Addr,mqtt_Setup->broker_Addr);
+	c_Port = mqtt_Setup->broker_Port;
+
+	struct sockaddr_in servaddr;
+	memset(&servaddr, 0, sizeof(servaddr));
+	servaddr.sin_family = AF_INET;
+	servaddr.sin_addr.s_addr = inet_addr(c_Addr);
+	servaddr.sin_port = htons(c_Port);
+	if (connect(client_Socket, (struct sockaddr*)&servaddr, sizeof(servaddr)) == -1){
+		printf("[TCP_Client]Error in Connect!\n");
+		return 0;
+	}
+	else{
+		printf("[TCP_Client]Client Connected to target!\n");
+	}
+
+	if (send(client_Socket,start_Message,sizeof(start_Message),0)<0){
+		printf("[TCP_Client]Error in send!\n");
+	}
+	else{
+		printf("[TCP_Client]Welcome message sent!\n");
+	}
+
+	char send_Message[128];
+	while(1){
+		printf("Please Input:");
+		scanf("%s",send_Message);
+		if (send(client_Socket,send_Message,sizeof(send_Message),0)<0){
+			printf("[TCP_Client]Error in send!\n");
+		}
+		else{
+			printf("[TCP_Client]Message sent!\n");
+		}
+
+		memset(send_Message,0,sizeof(send_Message));
+
+		if((n = recv(client_Socket, client_Buff, recv_Len, MSG_DONTWAIT))>0){
+			client_Buff[n] = '\0';
+			printf("[TCP_Client]Recv_Message: %s\n",client_Buff);
+		}
+	}
+	return 0;
+}
+
+
+mqtt_Setups* mqtt_Init(mqtt_Setups *mqtt_Setup){
+
+	printf("Broker address:\n");
+	scanf("%s",mqtt_Setup->broker_Addr);
+	printf("Broker port:\n");
+	scanf("%d",&mqtt_Setup->broker_Port);
+	printf("User name:\n");
+	scanf("%s",mqtt_Setup->user_Name);
+	printf("User password:\n");
+	scanf("%s",mqtt_Setup->user_Pass);
+
+	return mqtt_Setup;
+}
+
+
+
+
 
 int main(int argc, char** argv) {
-	pthread_t tcp_thread;
+	pthread_t tcp_thread, client_thread;
 	int thread_Check;
+
+	mqtt_Setups *mqtt_Setup = (mqtt_Setups *)malloc(sizeof(mqtt_Setups));
+	mqtt_Setup = mqtt_Init(mqtt_Setup);
+
 
 	thread_Check = pthread_create(&tcp_thread,NULL,tcp_Setup,NULL);
 	if (thread_Check != 0){
 		printf("[TCP]Error in setup_thread create!");
 		return 0;
 	}
+
+	thread_Check = pthread_create(&client_thread,NULL,tcp_Client,(void *)mqtt_Setup);
+	if (thread_Check != 0){
+		printf("[TCP]Error in client_thread create!");
+		return 0;
+	}
+
 	udp_Setup();
 	pthread_join(tcp_thread,NULL);
+	pthread_join(client_thread,NULL);
+	free(mqtt_Setup);
+
 	return 0;
 }
 
